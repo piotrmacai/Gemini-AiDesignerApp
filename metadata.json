@@ -1,0 +1,5 @@
+{
+  "name": "AIDesigner",
+  "description": "A full-stack AI image editor and generator powered by Gemini 2.5 Flash Image. Features a multimodal chat interface for generating and editing architectural and creative designs.",
+  "requestFramePermissions": []
+}
