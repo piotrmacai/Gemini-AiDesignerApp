@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import { Message, Sender, ImageAttachment, GeneratedImage } from '../types';
-import { IconSparkles, IconImage, IconSend, IconX } from './Icons';
+
+import React, { useEffect, useRef, useState } from 'react';
+import { Message, Sender, ImageAttachment, GeneratedImage, AspectRatio } from '../types';
+import { IconSparkles, IconImage, IconSend, IconX, IconAspectRatio, IconLayers } from './Icons';
 
 interface SidebarProps {
   messages: Message[];
@@ -13,6 +14,11 @@ interface SidebarProps {
   onReuseImage: (img: GeneratedImage) => void;
   activeReferenceImage: ImageAttachment | null;
   onClearReference: () => void;
+  sessionTitle: string;
+  aspectRatio: AspectRatio;
+  setAspectRatio: (ratio: AspectRatio) => void;
+  numberOfImages: number;
+  setNumberOfImages: (num: number) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -25,15 +31,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isLoading,
   onReuseImage,
   activeReferenceImage,
-  onClearReference
+  onClearReference,
+  sessionTitle,
+  aspectRatio,
+  setAspectRatio,
+  numberOfImages,
+  setNumberOfImages
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  
+  // Menus
+  const [showAspectRatioMenu, setShowAspectRatioMenu] = useState(false);
+  const aspectRatioMenuRef = useRef<HTMLDivElement>(null);
+  const [showCountMenu, setShowCountMenu] = useState(false);
+  const countMenuRef = useRef<HTMLDivElement>(null);
+
+  // Gemini 3 Pro supported ratios
+  const aspectRatios: AspectRatio[] = ['1:1', '3:4', '4:3', '9:16', '16:9'];
+  const imageCounts = [1, 2, 3];
+
+  // Manage Object URL lifecycle for preview
+  useEffect(() => {
+    if (selectedFile) {
+        const url = URL.createObjectURL(selectedFile);
+        setPreviewUrl(url);
+        // Cleanup
+        return () => URL.revokeObjectURL(url);
+    } else {
+        setPreviewUrl(null);
+    }
+  }, [selectedFile]);
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Close menus on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (aspectRatioMenuRef.current && !aspectRatioMenuRef.current.contains(event.target as Node)) {
+        setShowAspectRatioMenu(false);
+      }
+      if (countMenuRef.current && !countMenuRef.current.contains(event.target as Node)) {
+        setShowCountMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -59,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isAI && (
             <div className="flex items-center gap-2 mb-1 text-xs font-semibold text-primary">
               <IconSparkles className="w-4 h-4" />
-              <span>ArchGenius AI</span>
+              <span>AI Designer</span>
             </div>
           )}
 
@@ -91,20 +139,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {msg.text}
             </div>
           )}
-          
-          {/* Note: Generated images are now only shown in the MainGallery, removed from Sidebar flow. */}
         </div>
       </div>
     );
+  };
+
+  // Helper to calculate preview style
+  const getPreviewStyle = () => {
+    const [w, h] = aspectRatio.split(':').map(Number);
+    return { aspectRatio: `${w} / ${h}` };
   };
 
   return (
     <div className="flex flex-col h-full bg-surface border-r border-surfaceHighlight w-full md:w-[400px] lg:w-[450px] shrink-0">
       {/* Header */}
       <div className="h-16 flex items-center px-6 border-b border-surfaceHighlight bg-background/50 backdrop-blur">
-        <div className="flex items-center gap-2 text-lg font-semibold text-textMain">
-          <span className="w-8 h-8 bg-yellow-500 text-black rounded flex items-center justify-center font-bold">A</span>
-          <span>New Design Project</span>
+        <div className="flex items-center gap-2 text-lg font-semibold text-textMain overflow-hidden">
+          <span className="shrink-0 w-8 h-8 bg-gradient-to-br from-primary to-accent text-black rounded flex items-center justify-center font-bold">AI</span>
+          <span className="truncate">{sessionTitle || "New Project"}</span>
         </div>
       </div>
 
@@ -113,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-textMuted text-center p-8 opacity-50">
             <IconSparkles className="w-12 h-12 mb-4 text-primary" />
-            <p className="text-sm">Start by describing a building, facade, or uploading an image to edit.</p>
+            <p className="text-sm">Start by describing an image, character, or scene to generate.</p>
           </div>
         )}
         {messages.map(renderMessage)}
@@ -132,40 +184,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Input Area */}
       <div className="p-4 bg-background/50 backdrop-blur border-t border-surfaceHighlight">
         
-        {/* Pending Upload Preview */}
-        {selectedFile && (
-          <div className="flex items-center gap-2 mb-2 p-2 bg-surfaceHighlight rounded-lg w-max animate-in fade-in slide-in-from-bottom-1">
-            <div className="w-10 h-10 rounded-lg overflow-hidden bg-black border border-surfaceHighlight/50">
+        {/* Pending Upload Preview - with Dynamic Aspect Ratio Cut */}
+        {selectedFile && previewUrl && (
+          <div className="flex items-center gap-3 mb-2 p-2 bg-surfaceHighlight rounded-xl w-full animate-in fade-in slide-in-from-bottom-1">
+            {/* Dynamic Ratio Box */}
+            <div className="relative h-16 shrink-0 bg-black border border-surfaceHighlight/50 rounded-lg overflow-hidden shadow-sm" style={getPreviewStyle()}>
                 <img 
-                    src={URL.createObjectURL(selectedFile)} 
+                    src={previewUrl} 
                     alt="preview" 
-                    className="w-full h-full object-cover opacity-80"
+                    className="w-full h-full object-cover opacity-90"
                 />
             </div>
-            <div className="flex flex-col">
-                <span className="text-xs font-medium text-textMain max-w-[150px] truncate">{selectedFile.name}</span>
-                <span className="text-[10px] text-primary">Ready to upload</span>
+            <div className="flex flex-col flex-1 min-w-0">
+                <span className="text-xs font-medium text-textMain truncate">{selectedFile.name}</span>
+                <span className="text-[10px] text-primary">Uploading... (Will crop to {aspectRatio})</span>
             </div>
-            <button onClick={() => setSelectedFile(null)} className="ml-2 p-1 text-textMuted hover:text-white hover:bg-white/10 rounded-full">
+            <button onClick={() => setSelectedFile(null)} className="p-1.5 text-textMuted hover:text-white hover:bg-white/10 rounded-full">
               <IconX className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
 
-        {/* Persistent Reference Preview (Only if no file selected) */}
+        {/* Persistent Reference Preview (Only if no file selected) - with Dynamic Aspect Ratio Cut */}
         {!selectedFile && activeReferenceImage && (
            <div className="flex items-center gap-3 mb-3 px-3 py-2 bg-surfaceHighlight/30 border border-primary/20 rounded-xl w-full animate-in fade-in slide-in-from-bottom-2">
-                <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-black shrink-0 border border-surfaceHighlight">
+                {/* Dynamic Ratio Box */}
+                <div className="relative h-16 shrink-0 bg-black border border-surfaceHighlight rounded-lg overflow-hidden shadow-sm" style={getPreviewStyle()}>
                     <img 
                         src={`data:${activeReferenceImage.mimeType};base64,${activeReferenceImage.data}`} 
                         alt="Reference" 
-                        className="w-full h-full object-cover opacity-80"
+                        className="w-full h-full object-cover opacity-90"
                     />
                     <div className="absolute inset-0 ring-1 ring-inset ring-white/10 rounded-lg"></div>
                 </div>
                 <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-primary mb-0.5">Using Reference Image</p>
-                    <p className="text-[10px] text-textMuted truncate">Prompts will edit this image</p>
+                    <p className="text-xs font-semibold text-primary mb-0.5">Ref Image ({aspectRatio})</p>
+                    <p className="text-[10px] text-textMuted truncate">New output will match this shape</p>
                 </div>
                 <button 
                     onClick={onClearReference} 
@@ -180,7 +234,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="relative flex items-end gap-2 bg-surfaceHighlight rounded-3xl p-2 border border-transparent focus-within:border-gray-600 transition-colors">
           <button 
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 text-textMuted hover:text-white transition-colors rounded-full hover:bg-white/10"
+            className="p-2 text-textMuted hover:text-white transition-colors rounded-full hover:bg-white/10 shrink-0"
             title="Upload Image"
           >
             <IconImage className="w-6 h-6" />
@@ -197,16 +251,81 @@ export const Sidebar: React.FC<SidebarProps> = ({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={activeReferenceImage && !selectedFile ? "Describe changes (e.g., 'add trees', 'make it night')..." : "Describe a building, facade, or environment..."}
+            placeholder={activeReferenceImage && !selectedFile ? "Describe changes..." : "Describe your idea..."}
             className="flex-1 bg-transparent text-textMain placeholder-textMuted text-sm focus:outline-none py-3 resize-none max-h-32"
             rows={1}
             style={{ minHeight: '44px' }}
           />
           
+          {/* Controls Group */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Aspect Ratio Selector */}
+            <div className="relative" ref={aspectRatioMenuRef}>
+                <button
+                onClick={() => setShowAspectRatioMenu(!showAspectRatioMenu)}
+                className="p-2 text-textMuted hover:text-white hover:bg-white/10 rounded-full transition-colors flex items-center gap-1"
+                title={`Aspect Ratio: ${aspectRatio}`}
+                >
+                <IconAspectRatio className="w-5 h-5" />
+                <span className="text-[10px] font-medium w-6 text-center hidden md:block">{aspectRatio}</span>
+                </button>
+                
+                {showAspectRatioMenu && (
+                <div className="absolute bottom-full right-0 mb-2 w-24 bg-surfaceHighlight border border-gray-700 rounded-xl shadow-xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-100">
+                    {aspectRatios.map((ratio) => (
+                    <button
+                        key={ratio}
+                        onClick={() => {
+                        setAspectRatio(ratio);
+                        setShowAspectRatioMenu(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-xs transition-colors hover:bg-white/10 ${
+                        aspectRatio === ratio ? 'text-primary bg-primary/10' : 'text-textMuted'
+                        }`}
+                    >
+                        {ratio}
+                    </button>
+                    ))}
+                </div>
+                )}
+            </div>
+
+            {/* Image Count Selector */}
+            <div className="relative" ref={countMenuRef}>
+                <button
+                    onClick={() => setShowCountMenu(!showCountMenu)}
+                    className="p-2 text-textMuted hover:text-white hover:bg-white/10 rounded-full transition-colors flex items-center gap-1"
+                    title={`Generate: ${numberOfImages} images`}
+                >
+                    <IconLayers className="w-5 h-5" />
+                    <span className="text-[10px] font-medium w-3 text-center hidden md:block">{numberOfImages}</span>
+                </button>
+                
+                {showCountMenu && (
+                <div className="absolute bottom-full right-0 mb-2 w-20 bg-surfaceHighlight border border-gray-700 rounded-xl shadow-xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-100">
+                    {imageCounts.map((num) => (
+                    <button
+                        key={num}
+                        onClick={() => {
+                        setNumberOfImages(num);
+                        setShowCountMenu(false);
+                        }}
+                        className={`w-full text-center px-3 py-2 text-xs transition-colors hover:bg-white/10 ${
+                        numberOfImages === num ? 'text-primary bg-primary/10' : 'text-textMuted'
+                        }`}
+                    >
+                        {num}
+                    </button>
+                    ))}
+                </div>
+                )}
+            </div>
+          </div>
+
           <button 
             onClick={onSend}
             disabled={(!input.trim() && !selectedFile) || isLoading}
-            className={`p-2 rounded-full transition-all duration-200 ${
+            className={`p-2 rounded-full transition-all duration-200 shrink-0 ${
               (!input.trim() && !selectedFile) || isLoading
                 ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
                 : 'bg-textMain text-background hover:bg-white'

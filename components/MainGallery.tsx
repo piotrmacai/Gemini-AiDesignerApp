@@ -21,7 +21,7 @@ export const MainGallery: React.FC<MainGalleryProps> = ({ images, onReuseImage }
                             <div className="bg-white rounded-lg"></div>
                          </div>
                     </div>
-                    <h2 className="text-xl font-medium mb-2">No designs yet</h2>
+                    <h2 className="text-xl font-medium mb-2">No creations yet</h2>
                     <p className="text-sm">Your generated images and edits will appear here.</p>
                 </div>
             ) : (
