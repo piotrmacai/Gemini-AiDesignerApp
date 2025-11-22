@@ -36,10 +36,25 @@ export const generateOrEditImage = async (
       });
     }
 
-    // 2. Construct Prompt with Aspect Ratio Instruction
-    // For Gemini 2.5 Flash Image, textual instruction for AR is often more robust
+    // 2. Construct Prompt with Aspect Ratio and Mandatory Style
+    // Enforcing product editorial/fashion style as requested
+    // We split logic: "Rearrange" makes sense for edits, but not necessarily for fresh generation
+    let styleInstruction = " Style: product editorial photography, award winning style, for fashion and other products.";
+    
+    if (referenceImage) {
+        styleInstruction += " Rearrange the product into a more editorial professional product photo.";
+    } else {
+        styleInstruction += " Composition: Professional editorial product layout.";
+    }
+
     const aspectText = ` Aspect ratio: ${aspectRatio}.`;
-    const fullPrompt = (prompt || (referenceImage ? "Generate a variation of this image." : "Generate an image.")) + aspectText;
+    
+    // Ensure we have a base prompt if the user didn't provide one
+    const corePrompt = prompt 
+        ? prompt 
+        : (referenceImage ? "Generate a variation of this image." : "Generate an image of a high-end product.");
+        
+    const fullPrompt = `${corePrompt} ${styleInstruction} ${aspectText}`;
     
     parts.push({ text: fullPrompt });
 
@@ -54,17 +69,38 @@ export const generateOrEditImage = async (
       },
     });
 
-    // 3. Parse Response
+    // 3. Parse Response with robust error handling
     if (response.candidates && response.candidates.length > 0) {
       const content = response.candidates[0].content;
       if (content && content.parts) {
+        let textOutput = "";
+
         for (const part of content.parts) {
+          // Check for Image
           if (part.inlineData && part.inlineData.data) {
             return part.inlineData.data;
           }
+          // Collect Text (often contains refusal reasons or descriptions)
+          if (part.text) {
+            textOutput += part.text;
+          }
+        }
+
+        // If we loop through all parts and find no image, but found text:
+        if (textOutput) {
+            throw new Error(`Model response: "${textOutput.slice(0, 200)}${textOutput.length > 200 ? '...' : ''}"`);
         }
       }
     }
+
+    // Check for safety finish reasons
+    if (response.candidates && response.candidates[0] && response.candidates[0].finishReason) {
+        const reason = response.candidates[0].finishReason;
+        if (reason !== 'STOP') {
+             throw new Error(`Generation stopped due to: ${reason}`);
+        }
+    }
+
     throw new Error("No image data found in response.");
   };
 

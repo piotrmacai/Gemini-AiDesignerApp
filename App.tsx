@@ -18,6 +18,27 @@ const createNewSession = (): Session => ({
 });
 
 const App: React.FC = () => {
+  // Theme State
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('aidesigner_theme') as 'light' | 'dark' || 'dark';
+    }
+    return 'dark';
+  });
+
+  // Apply Theme Class
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('aidesigner_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+
   // Initialize sessions from localStorage or default to one empty session
   const [sessions, setSessions] = useState<Session[]>(() => {
     try {
@@ -223,7 +244,7 @@ const App: React.FC = () => {
     updateCurrentSession(s => ({ ...s, activeReferenceImage: null }));
   }, [updateCurrentSession]);
 
-  if (!activeSession) return <div className="flex h-screen items-center justify-center bg-background text-white">Loading...</div>;
+  if (!activeSession) return <div className="flex h-screen items-center justify-center bg-background text-textMain">Loading...</div>;
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden font-sans">
@@ -234,6 +255,8 @@ const App: React.FC = () => {
           onCreateSession={handleCreateSession}
           onDeleteSession={handleDeleteSession}
           isLoading={isLoading}
+          theme={theme}
+          toggleTheme={toggleTheme}
         />
 
         <Sidebar 
